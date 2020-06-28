@@ -1,0 +1,217 @@
+---
+title: Asynchronous Abstractions in Vanilla Javascript
+date: 2020-12-06
+tags:
+  - Javascript
+  - Asynchronous
+  - Coding
+---
+
+"Theres a library for that"
+
+We have all heard it. I often find myself reaching for a library to solve my
+problem as soon as I run into my first hurdle. But I think its worth exploring
+what happens when trying to develop your own abstractions. Even if you
+eventually solve your problem with a library, getting additional context and
+experience before you dive into library code is always a good thing
+
+This is my time spent exploring two abstractions: an interruptable request and a
+cancellable request.
+
+### Basis
+
+Lets say you have an async function that will make a request for you and return
+the JSON results.
+
+```javascript
+const makeRequest = async (url, params) => {
+  var fullUrl = url+paramterize(params);
+  var newRequest = new Request(fullUrl);
+  var response = await fetch(newRequest);
+  var result = await response.json();
+  return result;
+}
+```
+
+But suppose we don't just want to make a single request. What if I wanted to be
+able to make a request, and then interrupt it later?
+
+### First Example: Interruptible Request
+
+Calls to a server for information is one of the slowest things that happen on a
+website. Lets say your app makes lots of requests to a server for information,
+but only really cares about the latest request. When another request comes in,
+you would like to be able to cancel the old request and kick off the new one.
+
+Lets start with a generator function that will return our "requester"
+
+```javascript
+const interruptibleRequestGen = () => {
+  let currentRequest = null;
+  const controller = new AbortController();
+  const signal = controller.signal;
+}
+```
+
+The `AbortController` is not fully supported by all browsers, but in this case
+we will use it for the purposes of exploring how we could approach cancelling
+these `Promises`
+[here](https://developer.mozilla.org/en-US/docs/Web/API/AbortController/abort).
+
+Lets flush out the rest of the implementation.
+
+```javascript
+const interruptibleRequestGen = () => {
+  let currentRequest = null;
+  const controller = new AbortController();
+  const signal = controller.signal;
+  return async function makeRequest(url, params) {
+    if (currentRequest) {
+      controller.abort();
+    }
+
+    const fullUrl = url + paramterize(params);
+    currentRequest = new Request(fullUrl, { signal });
+    const response = await fetch(currentRequest);
+    const result = await response.json();
+
+    currentRequest = null;
+    return result;
+  }
+}
+```
+
+This generator wraps `makeRequest` function up with a closure containing
+our `AbortController`. Additional requests will be aborted if they are ongoing
+when another request comes in. We can invoke th
+
+```javascript
+const get_one = interruptibleRequestGen();
+const get_two = interruptibleRequestGen();
+const get_three = interruptibleRequestGen();
+
+get_one("http://google.com", {}).then((result) => console.log(result))
+get_one("http://facebook.com", { name: "Brady" }).then((result) => console.log(result))
+get_two("https://nodejs.org", { version: "latest" }).then((result) => console.log(result))
+get_three("http:/bradymackey.com", {}).then((result) => console.log(result))
+```
+
+In this example, three different "interruptible" requesters are created. The
+first request `get_one` will be interrupted when the second comes in. `get_two`
+and `get_three` are different functions, so they a will finish without
+interrupting each other or `get_one`.
+
+### Controlled Request
+
+Lets say you are building an infinite loading list. As the user scrolls to the
+bottom of the page, you detect they are close to the bottom and load more items.
+
+The issue is that as the user scolls to the bottom, they might be scrolling
+_fast_. Depending on how you set up your event handlers, that function might try
+to execute many times, and if the results are appended to the DOM each time you
+have a serious bug.
+
+Lets approach our request from the opposite direction. Instead of cancelling our
+old request when a new one comes in, lets _ignore_ later requests until our
+first one finishes.
+
+Start with another request generator function.
+
+```javascript
+function controlledRequestGen(url) {
+  let allowRequests = true;
+}
+```
+
+This wraps two variables in our function closure: `url` and `allowRequests`. We
+can make a simple implementation of this to get started.
+
+```javascript
+function controlledRequestGen(url) {
+  let allowRequests = true;
+
+  return async (params) => {
+    if (allowRequests) {
+      allowRequests = false;
+      const fullUrl = url + paramterize(params);
+      const request = new Request(fullUrl);
+      const response = await fetch(request);
+      const result = await response.json();
+
+      allowRequests = true
+      return result;
+    } else {
+      return false;
+    }
+  }
+}
+
+const getFromDatabase = controlledRequestGen("http://my.api.server/db")
+
+window.addEventListener('scroll', e => {
+  if (e.scrollY > 100) {
+    getFromDatabase({ page: page + 1 }).then(appendToDom)
+  }
+})
+```
+
+Our function will request another page the first time that the scroll event
+fires. Subsequent requests are ignored until the first one has finished.
+
+Lets assume that not only do we not want to make a request if another is
+happening, but also until the user has finished some other operation. Maybe not
+only do we have to wait for the request to finish, but maybe the code needs to
+finish appending our results to the DOM. We can also give our users some
+functionality to "allow" requests to happen again.
+
+```javascript
+function controlledRequestGen() {
+  let allowRequests = true;
+  const makeRequest = async (url, params) => {
+    if (allowRequests) {
+      allowRequests = false;
+      const fullUrl = url + paramterize(params);
+      const request = new Request(fullUrl);
+      const response = await fetch(request);
+      const result = response.json();
+
+      return result,
+    } else {
+      return false;
+    }
+  }
+
+  return {
+    requester: makeRequest
+    allowMoreRequests: () => {
+      allowRequests = true
+    }
+  }
+}
+
+const { requester: getFromDatabase, allowMoreRequests } = controlledRequestGen("http://my.api.server/db")
+
+window.addEventListener('scroll', e => {
+  if (e.scrollY > 100) {
+    const promise = getFromDatabase({ page: page + 1 })
+    .then(appendToDom)
+    .then(allowMoreRequests)
+  }
+})
+
+```
+
+When we finished appending to the DOM, we let the original requesting function
+its ok to accept more events and get more items from the database. For 99% of
+our use cases, this is all we need. There is a slight catch though. We have
+given our users the ability to override and allow requests even if the first
+hasn't finished. With great power comes great responsibility
+
+### Wrapping up
+
+These two functions are just examples of how thinking at a higher level of what
+we want to do can help create a simpler, more declarative code base. The
+details of these functions may be more complicated than a simple `fetch`, but
+the people using them have less to worry about. Trying to wrap up bits of
+functionality into separate, composable pieces is one of the best ways that I
+have found to write great code.

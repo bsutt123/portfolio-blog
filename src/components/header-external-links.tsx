@@ -1,10 +1,11 @@
 /** @jsx jsx */
-import React from "react"
-import { jsx, Link as TLink } from "theme-ui"
-import useMinimalBlogConfig from "../hooks/use-minimal-blog-config"
+import React from "react";
+import { jsx, Link as TLink } from "theme-ui";
+import { withPrefix } from "gatsby";
+import useMinimalBlogConfig from "../hooks/use-minimal-blog-config";
 
 const HeaderExternalLinks = () => {
-  const { externalLinks } = useMinimalBlogConfig()
+  const { externalLinks } = useMinimalBlogConfig();
 
   return (
     <React.Fragment>
@@ -15,10 +16,13 @@ const HeaderExternalLinks = () => {
               {link.name}
             </TLink>
           ))}
+          <TLink href={withPrefix("/Brady_Resume.pdf")} download>
+            Resume
+          </TLink>
         </div>
       )}
     </React.Fragment>
-  )
-}
+  );
+};
 
-export default HeaderExternalLinks
+export default HeaderExternalLinks;

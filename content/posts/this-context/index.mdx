@@ -1,0 +1,353 @@
+---
+title: Understanding `this` in React
+date: 2018-05-08
+tags:
+  - Javascript
+  - React
+---
+
+When I first started learning React, I was always confused that for some reason
+React didn't understand that I had to use `this` everywhere. I had to bind
+`this` when I called a function, or used `this.state`, `this.props`,
+`this.handleClick`; you name it, you had to consider `this` and what it meant
+in the context of whatever you did.
+
+At first, I thought this was because React was poorly designed. In reality, its
+a function of the way that JavaScript implements classes. For React to diverge
+would be both a ton of work, and remove flexibility from the framework. This my
+attempt at explaining how I understand `this`, but hopefully with the context
+of how to use it within React.
+
+### Preface: Don't just read this post
+
+I stand on the shoulders of giants in terms of my understanding of javascript,
+scope, and `this`. I highly recommend that in addition to playing with these
+concepts yourselves in REPLs and your code base, explore the learning options
+out there. I personally have learned a lot of this material on [Frontend
+Masters](https://frontendmasters.com/) with a particular shoutout for [Kyle
+Simpson](https://github.com/getify) and [Will
+Sentance](http://willsentance.com/) for making absolutely phenomenal courses
+that were not only fun to watch and participate in but were immensely helpful
+in solidifying foundation knowledge of javascript.
+
+### Why does `this` exist in the first place?
+
+Before you can under `this` in React, you have to understand what `this` is in
+vanilla JavaScript
+
+Javascript variables are static or "lexically" scoped. When javascript gets
+compiled, it bases what variables a block of code has access to based on where
+it is defined in the code. Lexical is another word for "written", so it matters
+where a variable is defined.
+
+In a function, you don't just have access to variables in your functions local
+scope, you also have access to variables up the "lexical scope chain". If you
+define a function `fn2` within a function `fn1`, then `fn2` will be able to use
+any variable defined in it own local variable environment _and_ anything in
+`fn1`'s environment.
+
+```javascript title:function lexical scope
+function fn1() {
+  var foo = 'foo';
+  var bar = 'bar';
+  function fn2() {
+   var bar = 'bar';
+   var bam = 'bam';
+  }
+}
+```
+
+In this contrived example, `fn2` would be able to access all four variables at
+run time, but `fn1` would only be able to access `foo` and `bar`. `fn2` resides
+within `fn1` so it can see variables up the chain, but `fn1` can't look for
+variables down the chain.
+
+What if I don't know what the variable will have at compile time? Maybe you
+want to write a method that will reference data on an object the method is
+defined on. In this case you need to _dynamically_ determine the scope at
+execution time, and for that, you are going to need `this`.
+
+### What is 'this'
+
+Even MDN doesn't provide a great definition for what `this` is. It is hard to
+boil down to a single defition, and there are always caveats. This is my best
+attempt at defining what `this` is...
+
+> `this` in javascript will by default reference the object which invoked the
+> function
+
+That doesn't sound so hard, except when you consider that sometimes you can use
+`bind` to make it bound to a new function, you can use arrow functions that
+won't define their own this context, you can use `call` or `apply` to change
+how `this` interacts with your code. Ultimately, it can be quite tricky to
+figure out what `this` actually is.
+
+### How do I use 'this'
+
+The simplest way to use `this` is to reference some kind of property on an
+object inside a of `function` defined on that object. Lets consider the an
+example Student named Brady...
+
+```javascript
+var Brady = {
+  name: 'Brady',
+  grades: ['A','B',...],
+  changeName: function(newName) {
+    this.name = newName;
+  },
+}
+```
+
+In this example, our `changeName` property is a function that changes the name of the Student object to be a new name.
+
+```javascript
+console.log(Brady.name); //Brady
+Brady.changeName("Bill");
+console.log(Brady.name); //Bill
+```
+
+Great! I have a Brady `Object` and I can change the name on the object. This
+implementation means I need to manually create the all my students. Lets work
+towards a function that can create students
+
+### How does this all relate to classes
+
+JavaScript is a prototypal language. Being a prototypal language means a lot of
+things, but one of the major consequences is that JavaScript did not originally
+have an implementation of Classes or Inheritance. But you could make something
+that looked very much like a class using the objects and function. Lets see how
+we might make a Student.
+
+```javascript
+var studentFunctions = {
+  changeName: function(newName) {
+    this.name = newName;
+  },
+}
+
+function studentCreator(name, grades) {
+  var newStudent = Object.create(studentFunctions);
+  newStudent.name = name;
+  newStudent.grades = grades;
+  return newStudent;
+}
+
+var brady = studentCreator('Brady', ['A','B']);
+var bill = studentCreator('Bill', []);
+
+```
+
+We have defined a function that "creates" students. It attaches the functions
+we want on every student to a new `Object` with `Object.create`. It then
+attaches the properties that will define that particular student from the
+arguments to the creator function, and then returns the newly created student.
+
+You probably won't see classes written like this in JavaScript. This is
+definitely a lot of code, but what is happening is obvious. When you call
+`studentCreator`, you are making a new object with the properties of
+`studentFunctions`, assigning the inputs to properties on that object, and then
+returning it. But developers are by nature lazy, so they wanted to automate
+this. To streamline this process, you can use the `new` keyword. `new` will do
+4 things.
+
+1. Create a brand new `Object`
+2. Create a link between that new `Object`'s prototype and the prototype of the function that called it
+3. Execute the function and pass the newly created `Object` into the function as the `this` context
+4. If the function doesn't return anything, returns `this` from the function
+
+That lets you take our above code and make it into something that looks like this...
+
+```javascript
+function Student(name, grades) {
+  this.name = name;
+  this.grades = grades;
+}
+
+Student.prototype.changeName = function(newName) {
+  this.name = newName;
+}
+
+var brady = new Student('Brady',['A','B'])
+var bill = new Student('Bill', [])
+
+```
+
+This is fewer lines of code and is much more declaritive. But if you don't
+understand whats happening under the hood, then the behavior you get might feel
+odd.
+
+This is how javascript creates classes, which are defined by properties and
+methods on an `Object`. When you are using `this` inside of these classes, you
+are ultimately trying to reference the `this` that is that `Object`. You want to
+get to the variable `state` you put on the `Object`, you have to get it with `this.state`.
+You want to access the `handleChange` you defined as a property as
+`this.handleChange`. And most importantly _inside_ those functions you _need_
+`this` to reference that class `Object` so that you can do all the wonderful
+things you want to do with your React Components
+
+#### But I'm using classes, not Objects!
+
+In Javascript, `class` is just syntactic sugar for using the exact same
+notation that I specified above. You could also write a student class like
+this.
+
+```javascript
+class Student {
+  constructor(name, grades) {
+    this.name = name;
+    this.grades = grades;
+  }
+
+  changeName(newName) {
+    this.name = newName;
+  }
+}
+
+```
+
+classes have a couple extra bits (like the `super` keyword) but for most cases,
+they are the exact same thing. This syntax is easier to write, and has a ton of
+advantages. But its largest disadvantage is that its very easy to create a
+class in javascript and have _no_ idea how it works under the hood, which can lead
+to misunderstanding and bugs down the line.
+
+## When are you gonna talk about React already!
+
+To understand `this` in React, you have to understand `this` in plain old
+javascript.
+
+A long time ago, React added functionality to use the native ES6 class to make
+a React component. For better or for worse they chose to not [auto-bind
+this](https://reactjs.org/blog/2015/01/27/react-v0.13.0-beta-1.html#autobinding),
+and instead implemented classes the same as ES6 would.
+
+So largely, it is on you to bind the right this context to your functions so
+that they can access the `this` that has all the properties like `setState`,
+`state`, and anything else you define on the class `Object`. If you don't, then
+when you go update the state, or change anything on `this`, your function will
+fail as `this` will be `undefined`.
+
+### How to bind `this` to your functions
+
+One of the things that I don't like about React is just how many different
+ways there are to bind `this`. I think that it leads to confusion about what is
+happening and where the `this` binding is actually occuring. I'm going to try
+and detail all the ways that I know how to bind this, and hopefully that should
+give you a good idea of how you might see it happening.
+
+But just as important as examples are understanding the tools that are used
+to bind `this`, and that means that we need to talk about regular functions,
+arrow functions and the `bind` keyword...
+
+#### Aside: Arrow Functions
+
+ES6 made a new syntax for functions that looks like this.
+
+```javascript
+var printHey = () => console.log('hey')
+```
+
+Its called an arrow function. In this case, that arrow function is
+equivalent to this function expression.
+
+```javascript
+var printHey = function() {
+  return console.log('hey')
+}
+```
+
+So whats the difference? That can be illustrated with another object.
+
+```javascript
+this.name = "Bill"
+
+myCoolObject = {
+  name: "Brady",
+  printArrow: () => {
+    console.log(this.name)
+  },
+  printReg() {
+    console.log(this.name)
+  }
+}
+
+myCoolObject.printArrow() //Bill
+myCoolObject.printReg()  //Brady
+```
+
+It looks like these two functions do the same thing, but they actually print
+different things to the console. Why?
+
+Arrow functions don't define their own `this` context, they inherit it from the
+lexical scope. Function declarations bind their `this` context from the object
+that they are defined on. So `printReg` gets `this.name` from `myCoolObject`,
+but `printArrow` gets `this.name` from the environmnet where `myCoolObject` is
+defined.
+
+If a function doesn't use `this`, then there is no difference between arrow and
+function declarations. But this subtle difference allows us to use arrows to
+define functions in React without binding then like normal function
+declarations.
+
+### Binding this in React
+
+Here is a brief summary of how I have seen people commonly bind this...
+
+`this` could be bound to the function in the constructor.
+
+```javascript
+class Button extends React.Component {
+  constructor() {
+    ...
+    this.toggle = this.toggle.bind(this);
+  }
+
+  toggle() {
+  ...Some dope logic using this
+  }
+
+  render() {
+    ...type up some sweet sweet JSX
+    <RandomThing toggleProp={this.toggle} />
+  }
+}
+
+```
+
+Or you can define the function as an arrow function on the `class`.
+
+```javascript
+class Button extends React.Component {
+  constructor() {
+    ...
+  }
+
+  toggle = () => {
+    ...Some dope logic using this
+  }
+
+  render() {
+    ...type up some sweet sweet JSX
+    <RandomThing toggleProp={this.toggle} />
+  }
+}
+```
+
+But which is better?
+
+That is really up to preference. I used to prefer `bind(this)` because it was
+more explicit. Today I prefer arrow functions because they are more common and
+reduce noise. Each has its place. But whats more important than how you bind
+`this` in your React components is understanding why you have to do it in the
+first place. A deeper undersanding of lexical and relative scoping in variables
+is valuable no matter what you are programming in JavaScript.
+
+### 2020 Update
+
+I originally wrote this article in 2018. How time flies when it comes to React.
+I used to spend hours teaching students about `this` in React, and now you
+don't have to worry about it at all because Functional Components are far more
+common than Class Components. You probably won't need to do a lot of binding in
+todays React. But much of this is about `this` in general, rather than the
+specific case of React, so I hope that you can still glean some useful bits of
+knowledge.
