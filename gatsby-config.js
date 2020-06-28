@@ -4,7 +4,14 @@ require(`dotenv`).config({
 
 module.exports = {
   siteMetadata: {
-    siteTitleAlt: `Minimal Blog - Gatsby Theme`,
+    siteTitle: `Brady Mackey`,
+    siteTitleAlt: `Brady Mackey - Blog`,
+    siteHeadline: ``,
+    siteUrl: `https://brady.codes`,
+    siteDescription: `Simple blog and portfolio for Brady Mackey`,
+    siteLanguage: `en`,
+    siteImage: `/banner.jpg`,
+    author: `@bsutt123`,
   },
   plugins: [
     {
